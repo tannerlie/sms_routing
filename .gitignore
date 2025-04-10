@@ -28,6 +28,12 @@ bin/
 ### Mac OS ###
 .DS_Store
 
-.jar
-.xml
-.iml
+# IDE files
+.idea/
+*.iml
+
+# Compiled classes
+*.class
+
+# JAR files
+*.jar
