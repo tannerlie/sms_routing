@@ -1,14 +1,19 @@
 import com.rabbitmq.client.*;
-
 import java.io.*;
+
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Scanner;
 import java.util.concurrent.TimeoutException;
 
 public class User {
 
-    private static final String TASK_QUEUE_NAME = "message_queue";
+    private static final String ANTENNA_1_QUEUE_NAME = "antenna_1_queue";
+    private static final String ANTENNA_2_QUEUE_NAME = "antenna_2_queue";
     private static final int LOCATION_PING_INTERVAL = 1000; // 1 seconds
     private static final int LOCATION_MOVEMENT_INTERVAL = 5000; // 5 seconds
+    private static final ArrayList<String> antenna_queues = new ArrayList<>(Arrays.asList("antenna_1_queue",
+            "antenna_2_queue"));
 
     private final ConnectionFactory connectionFactory;
     private final Connection connection;
@@ -70,7 +75,8 @@ public class User {
     private void startLocationPingTask(Channel channel) {
         try {
 
-            channel.queueDeclare(TASK_QUEUE_NAME, true, false, false, null);
+            channel.queueDeclare(ANTENNA_1_QUEUE_NAME, true, false, false, null);
+            channel.queueDeclare(ANTENNA_2_QUEUE_NAME, true,false, false, null);
 
             // Start a thread for sending location pings every 5 seconds
             Runnable locationTask = createLocationPingTask(channel);
@@ -107,7 +113,7 @@ public class User {
     public void sendMessage(Channel channel, String input) throws IOException {
         try {
 
-            channel.queueDeclare(TASK_QUEUE_NAME, true, false, false, null);
+            channel.queueDeclare(ANTENNA_1_QUEUE_NAME, true, false, false, null);
 
             String targetUserId;
             String messageBody;
@@ -150,7 +156,7 @@ public class User {
 
     private void publishMessage(Channel channel, byte[] message) {
         try {
-            channel.basicPublish("", TASK_QUEUE_NAME, null, message);
+            channel.basicPublish("", ANTENNA_1_QUEUE_NAME, null, message);
         } catch (Exception e) {
             System.err.println("Failed to send message: " + e.getMessage());
             e.printStackTrace();

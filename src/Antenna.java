@@ -1,62 +1,91 @@
 import com.rabbitmq.client.*;
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.ObjectInputStream;
+import java.io.*;
 import java.util.concurrent.TimeoutException;
 
 public class Antenna {
 
-    private static final String TASK_QUEUE_NAME = "message_queue";
-    private static final String CENTRAL_HUB_QUEUE_NAME = "central_hub_queue";
-    private Connection connection;
-    private Channel recvChannel;
-    private Channel centralHubChannel;
-    private RoutingTable routingTable;
+    private static final String CENTRAL_HUB_ROUTE_QUEUE_NAME = "central_hub_route_queue";
+    private static final String CENTRAL_HUB_MESSAGE_QUEUE_NAME = "central_hub_message_queue";
+    private final String recvFromCentralQueueName;
+    private final String antennaId;
+    private final ConnectionFactory factory;
+    private final String recvQueueName;
+    private final Channel recvChannel;
+    private final Channel sendChannel;
 
-    public Antenna(ConnectionFactory factory) throws IOException, TimeoutException {
-        this.connection = factory.newConnection();
+    public Antenna(String antennaId) throws IOException, TimeoutException {
+        this.factory = new ConnectionFactory();
+        this.factory.setHost("localhost");
+        Connection connection = factory.newConnection();
         this.recvChannel = connection.createChannel();
-        this.centralHubChannel = connection.createChannel();
+        this.sendChannel = connection.createChannel();
+        this.recvQueueName = "antenna_" + antennaId + "_queue";
+        this.antennaId = "antenna_" + antennaId;
+        this.recvFromCentralQueueName = "antenna_" + antennaId + "_message_queue";
+//        this.routingTable = new RoutingTable();
     }
 
-    private void forwardMessageToCentral() {
-        //
-    }
-
-    private void processPing(Message message, byte[] serializedMessage) {
-        Route route = new Route(message.getFrom(), message.getBody());
-        if (!routingTable.contains(route)) {
-            routingTable.addRoute(route);
-            routeToTarget(serializedMessage, centralHubChannel, CENTRAL_HUB_QUEUE_NAME);
-        }
-    }
-
-    private void routeToTarget(byte[] message, Channel channel, String queue) {
-        // check routing table
+    private void processPing(Message message) {
+        Route route = new Route(message.getFrom(), antennaId);
+//        if (!routingTable.contains(route)) {
+//            routingTable.addRoute(route);
         try {
-            channel.basicPublish("", queue, null, message);
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            ObjectOutputStream out = new ObjectOutputStream(bos);
+            out.writeObject(route);
+            out.flush();
+            byte[] serializedObject = bos.toByteArray();
+            sendMessage(sendChannel, serializedObject, CENTRAL_HUB_ROUTE_QUEUE_NAME);
         } catch (Exception e) {
-            System.err.println("Failed to publish message to target: " + e.getMessage());
+            System.err.println(e.getMessage());
             e.printStackTrace();
         }
+//        }
     }
 
-    public static void main(String[] argv) throws Exception {
-        ConnectionFactory factory = new ConnectionFactory();
+    private void sendMessage(Channel channel, byte[] message, String queue) throws IOException {
+        try {
+            channel.basicPublish("", queue, null, message);
+        } catch (IOException e) {
+            throw new IOException(e);
+        }
+    }
 
+    private void routeToCentral(byte[] serializedMessage, Message message) {
+        // check routing table
+        Route route = new Route(message.getTo(), antennaId);
+//        if (routingTable.contains(route)) {
+//            String queue = "user_" + message.getTo() + "_queue";
+//            try {
+//                sendMessage(sendChannel, serializedMessage, queue);
+//            } catch (Exception e) {
+//                System.err.println("Failed to publish message to client: " + e.getMessage());
+//                e.printStackTrace();
+//            }
+//        } else {
+            try {
+                sendMessage(sendChannel, serializedMessage, CENTRAL_HUB_MESSAGE_QUEUE_NAME);
+            } catch (Exception e) {
+                System.err.println("Failed to publish message to central hub: " + e.getMessage());
+                e.printStackTrace();
+            }
+//        }
+    }
+
+    public void start() throws IOException {
         factory.setHost("localhost");
 
-        Antenna antenna = new Antenna(factory);
-
-        // Add this before setting up the consumer
-        antenna.recvChannel.queuePurge(TASK_QUEUE_NAME);
-        antenna.recvChannel.queueDeclare(TASK_QUEUE_NAME, true,     false, false, null);
+        recvChannel.queuePurge(recvQueueName);
+        recvChannel.queueDeclare(recvQueueName, true,     false, false, null);
+        recvChannel.queuePurge(recvFromCentralQueueName);
+        recvChannel.queueDeclare(recvFromCentralQueueName, true, false, false, null);
+//        antenna.recvCentralChannel.queueDeclare(CENTRAL_HUB_MESSAGE_QUEUE_NAME, true, false, false, null);
         System.out.println(" [*] Waiting for messages. To exit press CTRL+C");
 
-        antenna.recvChannel.basicQos(1);
+        recvChannel.basicQos(1);
 
-        DeliverCallback deliverCallback = (consumerTag, delivery) -> {
+        DeliverCallback processMessageFromUser = (consumerTag, delivery) -> {
             ByteArrayInputStream bis = new ByteArrayInputStream(delivery.getBody());
             ObjectInputStream in = new ObjectInputStream(bis);
 
@@ -64,20 +93,39 @@ public class Antenna {
             try {
                 Message message = (Message) in.readObject();
                 if (message.getTo().isEmpty()) {
-//                    antenna.processPing(message, delivery.getBody());
-//                    forwardMessageToCentral();
+                    processPing(message);
                 } else {
-                    String queue = "user_" + message.getTo() + "_queue";
                     System.out.println("received" + message.getBody() + " from " + message.getFrom());
-                    antenna.routeToTarget(delivery.getBody(), antenna.recvChannel, queue);
+                    routeToCentral(delivery.getBody(), message);
                 }
             } catch (Exception e) {
-                System.out.println(" [x] Error deserializing message on server side: " + e.getMessage());
+                System.out.println(" [x] Error deserializing message on antenna side: " + e.getMessage());
                 e.printStackTrace();
             } finally {
-                antenna.recvChannel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
+                recvChannel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
             }
         };
-        antenna.recvChannel.basicConsume(TASK_QUEUE_NAME, false, deliverCallback, consumerTag -> { });
+        DeliverCallback processMessageFromCentralHub = (consumerTag, delivery) -> {
+            ByteArrayInputStream bis = new ByteArrayInputStream(delivery.getBody());
+            ObjectInputStream in = new ObjectInputStream(bis);
+
+            try {
+                Message message = (Message) in.readObject();
+                String queue = "user_" + message.getTo() + "_queue";
+                sendMessage(sendChannel, delivery.getBody(), queue);
+                System.out.println("Sending " + message.getBody() + " to " + message.getTo());
+            } catch (IOException e) {
+                System.err.println("Failed to publish message to user: " + e.getMessage());
+                e.printStackTrace();
+            } catch (ClassNotFoundException e) {
+                System.err.println("Error deserializing message from central on antenna side: " + e.getMessage());
+                e.printStackTrace();
+            } finally {
+                recvChannel.basicAck(delivery.getEnvelope().getDeliveryTag(), false);
+            }
+        };
+        recvChannel.basicConsume(recvQueueName, false, processMessageFromUser, consumerTag -> { });
+        recvChannel.basicConsume(recvFromCentralQueueName, false, processMessageFromCentralHub,
+                consumerTag -> { });
     }
 }

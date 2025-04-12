@@ -1,4 +1,6 @@
-public class Route {
+import java.io.Serializable;
+
+public class Route implements Serializable {
     private String targetUid;
     private String antennaId;
 
@@ -10,7 +12,20 @@ public class Route {
         return targetUid;
     }
 
-    public String getAntenna() {
+    public String getAntennaId() {
         return antennaId;
+    }
+
+    public void setAntennaId(String antennaId) {
+        this.antennaId = antennaId;
+    }
+
+    public void setTargetUid(String targetUid) {
+        this.targetUid = targetUid;
+    }
+
+    @Override
+    public String toString() {
+        return targetUid + " " + antennaId;
     }
 }
