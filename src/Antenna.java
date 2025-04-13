@@ -66,6 +66,7 @@ public class Antenna {
 //        } else {
             try {
                 sendMessage(sendChannel, serializedMessage, CENTRAL_HUB_MESSAGE_QUEUE_NAME);
+                System.out.println("Sent " + message.getBody() + " from " + message.getFrom() + " to central node");
             } catch (Exception e) {
                 System.err.println("Failed to publish message to central hub: " + e.getMessage());
                 e.printStackTrace();
@@ -76,9 +77,9 @@ public class Antenna {
     public void start() throws IOException {
         factory.setHost("localhost");
 
-        recvChannel.queuePurge(recvQueueName);
+//        recvChannel.queuePurge(recvQueueName);
         recvChannel.queueDeclare(recvQueueName, true,     false, false, null);
-        recvChannel.queuePurge(recvFromCentralQueueName);
+//        recvChannel.queuePurge(recvFromCentralQueueName);
         recvChannel.queueDeclare(recvFromCentralQueueName, true, false, false, null);
 //        antenna.recvCentralChannel.queueDeclare(CENTRAL_HUB_MESSAGE_QUEUE_NAME, true, false, false, null);
         System.out.println(" [*] Waiting for messages. To exit press CTRL+C");
@@ -95,7 +96,7 @@ public class Antenna {
                 if (message.getTo().isEmpty()) {
                     processPing(message);
                 } else {
-                    System.out.println("received" + message.getBody() + " from " + message.getFrom());
+                    System.out.println("Received " + message.getBody() + " from " + message.getFrom());
                     routeToCentral(delivery.getBody(), message);
                 }
             } catch (Exception e) {
@@ -111,6 +112,7 @@ public class Antenna {
 
             try {
                 Message message = (Message) in.readObject();
+                System.out.println("Received " + message.getBody() + " from central hub");
                 String queue = "user_" + message.getTo() + "_queue";
                 sendMessage(sendChannel, delivery.getBody(), queue);
                 System.out.println("Sending " + message.getBody() + " to " + message.getTo());

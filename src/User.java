@@ -8,12 +8,10 @@ import java.util.concurrent.TimeoutException;
 
 public class User {
 
-    private static final String ANTENNA_1_QUEUE_NAME = "antenna_1_queue";
-    private static final String ANTENNA_2_QUEUE_NAME = "antenna_2_queue";
     private static final int LOCATION_PING_INTERVAL = 1000; // 1 seconds
     private static final int LOCATION_MOVEMENT_INTERVAL = 5000; // 5 seconds
-    private static final ArrayList<String> antenna_queues = new ArrayList<>(Arrays.asList("antenna_1_queue",
-            "antenna_2_queue"));
+    private static final ArrayList<String> ANTENNA_QUEUES = new ArrayList<>(Arrays.asList("antenna_1_queue",
+            "antenna_2_queue", "antenna_3_queue", "antenna_4_queue"));
 
     private final ConnectionFactory connectionFactory;
     private final Connection connection;
@@ -22,11 +20,15 @@ public class User {
     private Thread locationMovementThread;
     private Thread recvMessageThread;
     private String uid;
+    private GeographicalGrid grid;
+    private int currAntennaConnected;
 
     public User(ConnectionFactory connectionFactory) throws IOException, TimeoutException {
         this.connectionFactory = connectionFactory;
         this.connection = connectionFactory.newConnection();
         this.position =  new Position();
+        this.grid = new GeographicalGrid();
+        this.currAntennaConnected = grid.connectToAntenna(position);
     }
 
     private void close() throws IOException {
@@ -43,6 +45,11 @@ public class User {
                     break;
                 }
                 position.move();
+                int temp = grid.connectToAntenna(position);
+                if (temp != currAntennaConnected) {
+                    currAntennaConnected = temp;
+                    System.out.println(currAntennaConnected);
+                }
 
             }
         };
@@ -74,9 +81,9 @@ public class User {
 
     private void startLocationPingTask(Channel channel) {
         try {
-
-            channel.queueDeclare(ANTENNA_1_QUEUE_NAME, true, false, false, null);
-            channel.queueDeclare(ANTENNA_2_QUEUE_NAME, true,false, false, null);
+            for (String antennaQueue : ANTENNA_QUEUES) {
+                channel.queueDeclare(antennaQueue, true, false, false, null);
+            }
 
             // Start a thread for sending location pings every 5 seconds
             Runnable locationTask = createLocationPingTask(channel);
@@ -112,8 +119,9 @@ public class User {
 
     public void sendMessage(Channel channel, String input) throws IOException {
         try {
-
-            channel.queueDeclare(ANTENNA_1_QUEUE_NAME, true, false, false, null);
+            for (String antennaQueue : ANTENNA_QUEUES) {
+                channel.queueDeclare(antennaQueue, true, false, false, null);
+            }
 
             String targetUserId;
             String messageBody;
@@ -156,7 +164,7 @@ public class User {
 
     private void publishMessage(Channel channel, byte[] message) {
         try {
-            channel.basicPublish("", ANTENNA_1_QUEUE_NAME, null, message);
+            channel.basicPublish("", ANTENNA_QUEUES.get(currAntennaConnected - 1), null, message);
         } catch (Exception e) {
             System.err.println("Failed to send message: " + e.getMessage());
             e.printStackTrace();
@@ -217,6 +225,8 @@ public class User {
             factory.setHost("localhost");
 
             User user = new User(factory);
+            System.out.println(user.position);
+            System.out.println(user.currAntennaConnected);
             Channel locationPingChannel = user.connection.createChannel(); // Create ping channel
             Channel messagingChannel = user.connection.createChannel(); //Create messaging channel
             Channel recvChannel = user.connection.createChannel();

@@ -14,6 +14,11 @@ public class Position {
         this.y = RANDOM.nextInt(MAX_DIMENSIONS);
     }
 
+    public Position(int[] position) {
+        this.x = position[0];
+        this.y = position[1];
+    }
+
     public void move() {
         int[] movement = DIRECTION[RANDOM.nextInt(4)];
         int xTemp = (x + movement[0]);

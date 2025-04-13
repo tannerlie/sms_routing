@@ -46,7 +46,7 @@ public class CentralHub {
         String queue = antennaQueueMapping.get(antenna);
         try {
             sendChannel.basicPublish("", queue, null, serializedMessage);
-            System.out.println("Sending Message to " + queue);
+            System.out.println("Routing Message to " + queue);
         } catch(IOException e) {
             System.err.println("Error routing message to" + antenna + " on client side: " + e.getMessage());
             e.printStackTrace();
@@ -82,7 +82,7 @@ public class CentralHub {
             try {
                 Message message = (Message) in.readObject();
                 String antennaToRouteTo = centralHub.routingTable.findAntenna(message.getTo());
-                System.out.println("received " + message.getBody() + " from " + message.getFrom());
+                System.out.println("Received " + message.getBody() + " from " + message.getFrom());
                 centralHub.routeMessage(antennaToRouteTo, delivery.getBody());
             } catch (ClassNotFoundException e) {
                 System.err.println("Error in deserializing message on central hub side: " + e.getMessage());
