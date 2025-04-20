@@ -82,6 +82,9 @@ public class CentralHub {
             try {
                 Message message = (Message) in.readObject();
                 String antennaToRouteTo = centralHub.routingTable.findAntenna(message.getTo());
+                if (antennaToRouteTo != null) {
+                    System.out.println("Could not find user in routing table");
+                }
                 System.out.println("Received " + message.getBody() + " from " + message.getFrom());
                 centralHub.routeMessage(antennaToRouteTo, delivery.getBody());
             } catch (ClassNotFoundException e) {
